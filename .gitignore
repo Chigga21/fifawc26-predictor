@@ -1,0 +1,6 @@
+docs/
+CLAUDE.md
+.venv/
+artifacts/
+__pycache__/
+*.png
