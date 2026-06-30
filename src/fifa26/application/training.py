@@ -1,39 +1,30 @@
-"""Shared training stage: load -> clean -> split -> Dixon-Coles -> train -> pick best.
+"""Clase que carga, limpia, divide los datos, 
+entrena los modelos de machine learning y elige al mejor.
 
-This is the single source of truth for *how a model is trained and evaluated*. Both
-the batch pipeline (`PredictionPipeline`) and the interactive UI (`InteractiveApp`)
-depend on the artifacts produced here instead of duplicating the sequence.
-
-The steps are exposed granularly (`load_and_split`, `fit_features`, `train_model`) so a
-caller can wrap each one in its own progress feedback: the batch pipeline prints a line,
-the interactive UI runs it inside an ASCII spinner thread. `run()` is a convenience that
-drives the whole sequence with an optional progress callback.
+@author Chigga21
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
 
 import pandas as pd
 
 from fifa26.data.cleaning import MatchCleaner
 from fifa26.domain.entities import MatchPrediction, Outcome, TeamStrength
 from fifa26.domain.interfaces import GoalModel, MatchRepository
-from fifa26.evaluation.metrics import EvaluationResult, accuracy_1x2
+from fifa26.evaluation.metrics import EvaluationResult, evaluate_1x2
 from fifa26.features.dixon_coles import DixonColesEstimator
 from fifa26.prediction.outcome import OutcomeCalculator
 from fifa26.prediction.poisson_matrix import PoissonMatrixBuilder
 
-# A progress hook receives a human-readable label for the step about to run.
-ProgressHook = Callable[[str], None]
-
 
 @dataclass
 class TrainedArtifacts:
-    """Everything downstream stages need once training is finished."""
+    """Todo lo que las etapas posteriores necesitan tras el entrenamiento."""
 
     best_model: GoalModel
     best_accuracy: float
+    best_rps: float
     models: list[GoalModel]
     evaluations: list[EvaluationResult]
     strengths: dict[str, TeamStrength]
@@ -44,12 +35,9 @@ class TrainedArtifacts:
 
 
 class Trainer:
-    """Runs (and remembers) the training/evaluation stages.
-
-    Dependencies are injected; the trainer never builds its own collaborators, so
-    each piece stays swappable and testable in isolation.
+    """Ejecuta las etapas de entrenamiento y evaluacion inyectando
+    directamente las dependencias.
     """
-
     def __init__(
         self,
         repository: MatchRepository,
@@ -68,7 +56,8 @@ class Trainer:
         self._test_year = test_year
         self._max_goals = max_goals
 
-        # Progressively populated state.
+        # Estado que se va poblando paso a paso
+        self.full: pd.DataFrame | None = None
         self.train: pd.DataFrame | None = None
         self.test: pd.DataFrame | None = None
         self.strengths: dict[str, TeamStrength] = {}
@@ -77,9 +66,16 @@ class Trainer:
         self.evaluations: list[EvaluationResult] = []
         self._actual: list[Outcome] = []
 
-    # --------------------------------------------------------------- granular steps
+        # Se reentrenan todos los modelos con todos los datos
+        # para obtener la mejor fidelidad posible
+        self._prod_strengths: dict[str, TeamStrength] = {}
+        self._prod_teams: list[str] = []
+        self._prod_matrix_builder: PoissonMatrixBuilder | None = None
+
     def load_and_split(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         matches = self._cleaner.clean(self._repository.load())
+        self.full = matches.copy()
+        # Split temporal para comparar modelos sin fuga de datos
         self.train = matches[matches["year"] < self._test_year].copy()
         self.test = matches[matches["year"] == self._test_year].copy()
         return self.train, self.test
@@ -99,23 +95,48 @@ class Trainer:
 
     def train_model(self, model: GoalModel) -> EvaluationResult:
         model.fit(self.train, self.strengths)
-        preds = self._predict_fixtures(model, self.test)
-        result = accuracy_1x2(model.name, preds, self._actual)
+        preds = self._predict_fixtures(model, self.test, self.matrix_builder)
+        result = evaluate_1x2(model.name, preds, self._actual)
         self.evaluations.append(result)
         return result
 
-    def artifacts(self) -> TrainedArtifacts:
-        best_result, best_model = max(
-            zip(self.evaluations, self._models), key=lambda pair: pair[0].accuracy
+    def best_evaluation(self) -> EvaluationResult:
+        """La mejor evaluacion por menor RPS (metrica de seleccion)"""
+        return min(self.evaluations, key=lambda e: e.rps)
+
+    def best_model(self) -> GoalModel:
+        """Retorna el modelo ganador emparejado por nombre"""
+        by_name = {m.name: m for m in self._models}
+        return by_name[self.best_evaluation().model_name]
+
+    def fit_production(self, model: GoalModel) -> None:
+        """Reentrena con el modelo Dixon-Coles y también 
+        al mejor modelo con TODOS los datos para mejorar las predicciones.
+        """
+        self._dixon_coles.fit(self.full)
+        self._prod_strengths = self._dixon_coles.strengths
+        self._prod_teams = sorted(self._prod_strengths)
+        self._prod_matrix_builder = PoissonMatrixBuilder(
+            self._max_goals, rho=self._dixon_coles.rho
         )
+        model.fit(self.full, self._prod_strengths)
+
+    def artifacts(self) -> TrainedArtifacts:
+        best_result = self.best_evaluation()
+        best_model = self.best_model()
+        # Usa los artefactos de produccion si fit_production ya corrio
+        strengths = self._prod_strengths or self.strengths
+        teams = self._prod_teams or self.teams
+        matrix_builder = self._prod_matrix_builder or self.matrix_builder
         return TrainedArtifacts(
             best_model=best_model,
             best_accuracy=best_result.accuracy,
+            best_rps=best_result.rps,
             models=list(self._models),
             evaluations=list(self.evaluations),
-            strengths=self.strengths,
-            matrix_builder=self.matrix_builder,
-            teams=self.teams,
+            strengths=strengths,
+            matrix_builder=matrix_builder,
+            teams=teams,
             train=self.train,
             test=self.test,
         )
@@ -132,25 +153,15 @@ class Trainer:
     def model_names(self) -> list[str]:
         return [m.name for m in self._models]
 
-    # --------------------------------------------------------------- convenience
-    def run(self, on_step: ProgressHook | None = None) -> TrainedArtifacts:
-        announce = on_step or (lambda _label: None)
-        announce("Loading and cleaning data")
-        self.load_and_split()
-        announce("Estimating Dixon-Coles strengths")
-        self.fit_features()
-        for model in self._models:
-            announce(f"Training model {model.name}")
-            self.train_model(model)
-        return self.artifacts()
-
-    # ------------------------------------------------------------------- private
     def _predict_fixtures(
-        self, model: GoalModel, fixtures: pd.DataFrame
+        self,
+        model: GoalModel,
+        fixtures: pd.DataFrame,
+        matrix_builder: PoissonMatrixBuilder,
     ) -> list[MatchPrediction]:
         lambda_home, lambda_away = model.predict_expected_goals(fixtures)
         predictions = []
         for (_, row), lh, la in zip(fixtures.iterrows(), lambda_home, lambda_away):
-            sm = self.matrix_builder.build(row["home_team"], row["away_team"], lh, la)
+            sm = matrix_builder.build(row["home_team"], row["away_team"], lh, la)
             predictions.append(self._outcome.to_prediction(sm))
         return predictions

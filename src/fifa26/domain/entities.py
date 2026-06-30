@@ -1,9 +1,5 @@
-"""Domain entities and value objects.
-
-This module is the innermost layer of the Clean Architecture. It contains the
-pure business concepts of the prediction problem and must NOT depend on any
-external/IO library (pandas, pymc, xgboost, matplotlib, ...). Everything here is
-immutable (`frozen=True`) so entities behave as value objects.
+"""Entidades y objetos de valor del dominio.
+@author Chigga21
 """
 from __future__ import annotations
 
@@ -14,7 +10,8 @@ import numpy as np
 
 
 class Outcome(Enum):
-    """The three possible results of a football match (the 1X2 market)."""
+    """Los tres resultados posibles de un partido, 
+    el marcador 1X2."""
 
     HOME_WIN = "1"
     DRAW = "X"
@@ -31,7 +28,7 @@ class Outcome(Enum):
 
 @dataclass(frozen=True)
 class Match:
-    """A single international match (full-time score, no penalties)."""
+    """Un partido internacional con marcador a tiempo completo sin penales"""
 
     date: str
     home_team: str
@@ -48,13 +45,8 @@ class Match:
 
 @dataclass(frozen=True)
 class TeamStrength:
-    """Dixon-Coles offensive/defensive ratings for one team.
-
-    Both ratings enter the log scoring rate as `attack_team - defense_opponent`:
-    `attack`  > 0 -> scores more goals than an average team.
-    `defense` > 0 -> concedes fewer goals than average (stronger defence).
+    """Ratings ofensivo y defensivo Dixon-Coles de un equipo.
     """
-
     team: str
     attack: float
     defense: float
@@ -62,11 +54,9 @@ class TeamStrength:
 
 @dataclass(frozen=True)
 class ScoreMatrix:
-    """Joint probability of every exact scoreline for a fixture.
-
-    `matrix[i, j]` = P(home scores i, away scores j). It is the bridge between
-    the expected goals (lambdas) produced by a model and the 1X2 outcome
-    probabilities derived downstream.
+    """Probabilidad conjunta de cada marcador exacto de un partido.
+    La celda i, j es la probabilidad de que el local anote i
+      y el visitante j. 
     """
 
     home_team: str
@@ -82,7 +72,7 @@ class ScoreMatrix:
 
 @dataclass(frozen=True)
 class MatchPrediction:
-    """1X2 probabilities for a fixture and the resulting most likely outcome."""
+    """Probabilidades 1X2 de un partido y el resultado mas probable que derivan"""
 
     home_team: str
     away_team: str

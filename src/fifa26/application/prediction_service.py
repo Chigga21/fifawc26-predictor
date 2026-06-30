@@ -1,9 +1,10 @@
-"""Prediction service: turn a chosen fixture into a full match forecast.
+"""Servicio de prediccion que convierte un partido
+elegido en un pronóstico completo.
 
-Wraps the artifacts produced by `Trainer` (a trained `GoalModel`, the Poisson matrix
-builder and the known team list) behind a single `predict(home, away, neutral)` call.
-Both the interactive UI (result screen) and the batch pipeline (example fixture) depend
-on this service instead of re-wiring the goal-model -> matrix -> outcome chain.
+Envuelve los artefactos del Trainer tras una única llamada
+al método predict.
+
+@author Chigga21
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from fifa26.prediction.poisson_matrix import PoissonMatrixBuilder
 
 @dataclass(frozen=True)
 class MatchForecast:
-    """The complete prediction for one fixture."""
+    """El pronostico completo de un partido."""
 
     score_matrix: ScoreMatrix
     prediction: MatchPrediction

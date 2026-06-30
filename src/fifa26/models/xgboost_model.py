@@ -1,4 +1,6 @@
-"""XGBoost goal-regression model (a `GoalModel` strategy)."""
+"""Modelo de regresion de goles con XGBoost, una estrategia GoalModel.
+@author Chigga21
+"""
 from __future__ import annotations
 
 import numpy as np
@@ -12,16 +14,7 @@ _FEATURES = ["attack", "opp_defense", "strength_diff", "is_home", "is_competitiv
 
 
 class XGBoostGoalModel(GoalModel):
-    """Gradient-boosted Poisson regression of goals scored.
-
-    Unlike the (log-linear) Dixon-Coles / Bayesian models, XGBoost can learn
-    non-linear interactions between the engineered strength features. We frame
-    the problem in a "long" layout (one row per team-side of each match) so a
-    single regressor predicts the goals of whichever side we ask about, then
-    reuse it for both the home and away lambdas.
-
-    `objective="count:poisson"` guarantees non-negative predictions that are
-    valid Poisson means, which is exactly what the downstream score matrix needs.
+    """Regresion Poisson de goles con gradient boosting
     """
 
     name = "XGBoost"
@@ -54,8 +47,7 @@ class XGBoostGoalModel(GoalModel):
         lambda_home = self._model.predict(home_feats[_FEATURES])
         lambda_away = self._model.predict(away_feats[_FEATURES])
         return np.asarray(lambda_home, float), np.asarray(lambda_away, float)
-
-    # ----------------------------------------------------------------- private
+    
     def _strength(self, team: str) -> TeamStrength:
         return self._strengths.get(team, TeamStrength(team, 0.0, 0.0))
 

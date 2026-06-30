@@ -1,18 +1,7 @@
-"""Simple "loading dots" animation shown while a blocking step runs.
+"""Spinner sencillo que se muestra como indicador que 
+un comando está ejecutándose (cargando)
 
-`run_with_spinner(label, fn)` executes `fn` in a worker thread and animates three dots
-(`.`, `..`, `...`) after the label on the main thread until the work finishes, then
-returns whatever `fn` returned (re-raising any exception).
-
-We deliberately do *not* draw a progress bar: the underlying steps (data loading,
-Dixon-Coles fit, model training) give no reliable progress signal, and a bar that fills
-on a timer would be a misleading simulation that can freeze at an intermediate state.
-A small set of moving dots keeps honest, constant visual feedback instead. The line is
-rewritten in place with `\r`; once finished it collapses into a single `[done]` line so
-the surrounding output stays a clean, continuous stream.
-
-When stdout is not a TTY the animation is skipped: the label is printed once and `fn`
-runs synchronously, so logs stay clean.
+@author Chigga21
 """
 from __future__ import annotations
 
@@ -25,12 +14,12 @@ from fifa26.cli import ansi
 
 T = TypeVar("T")
 
-_MAX_DOTS = 3
+_FRAMES = ("|", "/", "-", "\\")
 
 
-def run_with_spinner(label: str, fn: Callable[[], T], interval: float = 0.25) -> T:
+def run_with_spinner(label: str, fn: Callable[[], T], interval: float = 0.1) -> T:
     if not sys.stdout.isatty():
-        print(f"  * {label}...")
+        print(f"  * {label}")
         return fn()
 
     result: list[T] = []
@@ -39,7 +28,7 @@ def run_with_spinner(label: str, fn: Callable[[], T], interval: float = 0.25) ->
     def worker() -> None:
         try:
             result.append(fn())
-        except BaseException as exc:  # noqa: BLE001 - re-raised on the main thread
+        except BaseException as exc:
             error.append(exc)
 
     thread = threading.Thread(target=worker, daemon=True)
@@ -48,8 +37,8 @@ def run_with_spinner(label: str, fn: Callable[[], T], interval: float = 0.25) ->
     try:
         tick = 0
         while thread.is_alive():
-            dots = "." * (tick % (_MAX_DOTS + 1))
-            line = f"  {ansi.focused('[*]')} {label}{dots:<{_MAX_DOTS}}"
+            frame = _FRAMES[tick % len(_FRAMES)]
+            line = f"  {ansi.focused('[' + frame + ']')} {label}"
             sys.stdout.write("\r\033[K" + line)
             sys.stdout.flush()
             tick += 1
@@ -62,4 +51,5 @@ def run_with_spinner(label: str, fn: Callable[[], T], interval: float = 0.25) ->
     if error:
         raise error[0]
     print(f"  {ansi.active('[done]')} {label}")
+    sys.stdout.flush()
     return result[0]

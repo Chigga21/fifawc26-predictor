@@ -1,4 +1,7 @@
-"""Builds the joint scoreline probability matrix from expected goals."""
+"""Construye la matriz conjunta de marcadores a partir de los goles esperados.
+
+@author Chigga21
+"""
 from __future__ import annotations
 
 import numpy as np
@@ -8,13 +11,7 @@ from fifa26.domain.entities import ScoreMatrix
 
 
 class PoissonMatrixBuilder:
-    """Turns a pair of expected goals (lambdas) into a scoreline matrix.
-
-    Assuming home and away goals are (conditionally) independent Poisson
-    variables, `P(i, j) = Pois(i; lambda_home) * Pois(j; lambda_away)`. The
-    Dixon-Coles `tau` correction then nudges the four low-score cells to capture
-    the well-known dependence (extra draws / 1-0 / 0-1), and the matrix is
-    renormalised so it sums to one.
+    """Convierte un par de goles esperados en una matriz de marcadores.
     """
 
     def __init__(self, max_goals: int = 10, rho: float = 0.0) -> None:

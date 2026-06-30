@@ -1,21 +1,13 @@
-"""Data cleaning and filtering stage."""
+"""Etapa de limpieza y filtrado de datos.
+@author Chigga21
+"""
 from __future__ import annotations
 
 import pandas as pd
 
 
 class MatchCleaner:
-    """Cleans and filters the raw match DataFrame.
-
-    Single responsibility: turn the raw dataset into a tidy, analysis-ready
-    frame. It does not know where the data came from nor what happens next.
-
-    Steps:
-      * parse dates and keep matches from `min_year` onwards,
-      * drop rows with missing scores and cast scores to int,
-      * normalise the `neutral` flag to bool,
-      * (optionally) keep only teams with enough matches in the window so the
-        strength estimates are not driven by one or two games.
+    """Limpia y filtra el DataFrame crudo de partidos.
     """
 
     def __init__(self, min_year: int = 2018, min_matches_per_team: int = 8) -> None:
@@ -40,7 +32,12 @@ class MatchCleaner:
     def _as_bool(series: pd.Series) -> pd.Series:
         if series.dtype == bool:
             return series
-        return series.astype(str).str.upper().map({"TRUE": True, "FALSE": False}).fillna(False)
+        truthy = {"TRUE", "1", "1.0", "YES", "Y", "T"}
+        falsy = {"FALSE", "0", "0.0", "NO", "N", "F", "NAN", ""}
+        normalized = series.astype(str).str.strip().str.upper()
+        mapping = {v: True for v in truthy}
+        mapping.update({v: False for v in falsy})
+        return normalized.map(mapping).fillna(False).astype(bool)
 
     def _filter_rare_teams(self, df: pd.DataFrame) -> pd.DataFrame:
         appearances = pd.concat([df["home_team"], df["away_team"]]).value_counts()

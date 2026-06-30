@@ -1,4 +1,6 @@
-"""Derives 1X2 outcome probabilities and top scorelines from a score matrix."""
+"""Deriva las probabilidades 1X2 y los marcadores mas probables de una matriz.
+@author Chigga21
+"""
 from __future__ import annotations
 
 import numpy as np
@@ -7,13 +9,7 @@ from fifa26.domain.entities import MatchPrediction, ScoreMatrix
 
 
 class OutcomeCalculator:
-    """Aggregates a `ScoreMatrix` into business-level results.
-
-    The lower triangle of the matrix is a home win, the diagonal a draw and the
-    upper triangle an away win. This class is pure aggregation: it has no idea
-    how the matrix was produced.
-    """
-
+  
     def to_prediction(self, score_matrix: ScoreMatrix) -> MatchPrediction:
         m = score_matrix.matrix
         prob_home = float(np.tril(m, -1).sum())
@@ -30,7 +26,7 @@ class OutcomeCalculator:
     def top_scorelines(
         self, score_matrix: ScoreMatrix, top_n: int = 10
     ) -> list[tuple[str, float]]:
-        """Return the `top_n` most probable exact scorelines as ('h-a', prob)."""
+        """Devuelve los top_n marcadores mas probables"""
         m = score_matrix.matrix
         flat = [
             (f"{i}-{j}", float(m[i, j]))

@@ -1,21 +1,11 @@
-"""Dixon-Coles offensive/defensive strength estimator.
-
-This is the feature-engineering stage. It fits the classic Dixon & Coles (1997)
-bivariate-Poisson-with-correction model by weighted maximum likelihood and
-exposes, for every team, an `attack` and `defense` rating. Those ratings are the
-intermediate variables that feed the two downstream goal models.
-
-Model
------
-    log(lambda_home) = mu + gamma + attack_home - defense_away   (home, non-neutral)
-    log(lambda_away) = mu        + attack_away - defense_home
-
-`gamma` is the home advantage (dropped on neutral ground), `mu` the baseline log
-scoring rate. The low-score dependence is captured by Dixon-Coles' `tau`
-correction with parameter `rho`. Recent matches weigh more through an
-exponential time-decay with a configurable half-life.
+"""Estimador de fuerzas ofensiva y defensiva Dixon-Coles.
+Se encarga de las variables intermedias para entrenar
+a los modelos
+@author Chigga21
 """
 from __future__ import annotations
+
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -26,17 +16,15 @@ from fifa26.domain.entities import TeamStrength
 
 
 class DixonColesEstimator:
-    def __init__(self, half_life_days: int = 540, max_iter: int = 200) -> None:
+    def __init__(self, half_life_days: int = 540, max_iter: int = 500) -> None:
         self._half_life_days = half_life_days
         self._max_iter = max_iter
-        # Learned parameters (available after `fit`).
         self.mu: float = 0.0
         self.gamma: float = 0.0
         self.rho: float = 0.0
         self.strengths: dict[str, TeamStrength] = {}
         self._teams: list[str] = []
 
-    # ------------------------------------------------------------------ public
     def fit(self, matches: pd.DataFrame) -> "DixonColesEstimator":
         self._teams = sorted(set(matches["home_team"]) | set(matches["away_team"]))
         index = {t: i for i, t in enumerate(self._teams)}
@@ -49,8 +37,6 @@ class DixonColesEstimator:
         home_adv = (~matches["neutral"].to_numpy()).astype(float)
         weights = self._time_weights(matches["date"])
 
-        # Pre-computed constant of the Poisson log-pmf (does not affect argmax,
-        # kept so the reported log-likelihood is exact).
         log_fact = gammaln(hs + 1) + gammaln(as_ + 1)
 
         x0 = np.concatenate([[0.0, 0.3, 0.0], np.zeros(n), np.zeros(n)])
@@ -61,9 +47,17 @@ class DixonColesEstimator:
             x0,
             args=(hi, ai, hs, as_, home_adv, weights, log_fact, n),
             method="L-BFGS-B",
+            jac=self._neg_log_likelihood_grad,
             bounds=bounds,
             options={"maxiter": self._max_iter},
         )
+
+        if not result.success:
+            warnings.warn(
+                f"La optimizacion Dixon-Coles no convergio: {result.message}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         self.mu, self.gamma, self.rho, attack, defense = self._unpack(result.x, n)
         self.strengths = {
@@ -72,17 +66,6 @@ class DixonColesEstimator:
         }
         return self
 
-    def expected_goals(
-        self, home_team: str, away_team: str, neutral: bool
-    ) -> tuple[float, float]:
-        """Baseline Dixon-Coles expected goals for a fixture."""
-        h, a = self.strengths[home_team], self.strengths[away_team]
-        gamma = 0.0 if neutral else self.gamma
-        lambda_home = np.exp(self.mu + gamma + h.attack - a.defense)
-        lambda_away = np.exp(self.mu + a.attack - h.defense)
-        return float(lambda_home), float(lambda_away)
-
-    # ----------------------------------------------------------------- private
     def _time_weights(self, dates: pd.Series) -> np.ndarray:
         latest = dates.max()
         age_days = (latest - dates).dt.days.to_numpy()
@@ -94,8 +77,6 @@ class DixonColesEstimator:
         mu, gamma, rho = params[0], params[1], params[2]
         attack = params[3 : 3 + n]
         defense = params[3 + n : 3 + 2 * n]
-        # Identifiability: centre attack and defence (their global level is
-        # absorbed by mu / gamma).
         attack = attack - attack.mean()
         defense = defense - defense.mean()
         return mu, gamma, rho, attack, defense
@@ -109,14 +90,60 @@ class DixonColesEstimator:
         log_la = mu + attack[ai] - defense[hi]
         lam_h, lam_a = np.exp(log_lh), np.exp(log_la)
 
-        # Poisson log-pmf for both scorelines.
+        # Log-pmf de Poisson para ambos marcadores.
         ll = hs * log_lh - lam_h + as_ * log_la - lam_a - log_fact
 
-        # Dixon-Coles low-score correction tau.
+        # Correccion tau de Dixon-Coles
         tau = cls._tau(hs, as_, lam_h, lam_a, rho)
         ll = ll + np.log(np.clip(tau, 1e-10, None))
 
         return -float(np.sum(weights * ll))
+
+    @classmethod
+    def _neg_log_likelihood_grad(
+        cls, params, hi, ai, hs, as_, home_adv, weights, log_fact, n
+    ) -> np.ndarray:
+        """Gradiente analitico de la log-verosimilitud negativa.
+        """
+        mu, gamma, rho, attack, defense = cls._unpack(params, n)
+        log_lh = mu + gamma * home_adv + attack[hi] - defense[ai]
+        log_la = mu + attack[ai] - defense[hi]
+        lam_h, lam_a = np.exp(log_lh), np.exp(log_la)
+
+        # Derivadas de log(tau) respecto a lam_h, lam_a y rho en las celdas bajas
+        tau = np.clip(cls._tau(hs, as_, lam_h, lam_a, rho), 1e-10, None)
+        d_lh = np.zeros_like(lam_h)
+        d_la = np.zeros_like(lam_a)
+        d_rho = np.zeros_like(lam_h)
+        m00 = (hs == 0) & (as_ == 0)
+        m01 = (hs == 0) & (as_ == 1)
+        m10 = (hs == 1) & (as_ == 0)
+        m11 = (hs == 1) & (as_ == 1)
+        d_lh[m00] = -lam_a[m00] * rho
+        d_la[m00] = -lam_h[m00] * rho
+        d_rho[m00] = -lam_h[m00] * lam_a[m00]
+        d_lh[m01] = rho
+        d_rho[m01] = lam_h[m01]
+        d_la[m10] = rho
+        d_rho[m10] = lam_a[m10]
+        d_rho[m11] = -1.0
+
+        # Derivada de la log-verosimilitud respecto a log_lh y log_la
+        r_h = (hs - lam_h) + (d_lh * lam_h) / tau
+        r_a = (as_ - lam_a) + (d_la * lam_a) / tau
+        r_h_w = weights * r_h
+        r_a_w = weights * r_a
+
+        g_mu = np.sum(r_h_w + r_a_w)
+        g_gamma = np.sum(r_h_w * home_adv)
+        g_rho = np.sum(weights * (d_rho / tau))
+        g_attack = np.bincount(hi, r_h_w, n) + np.bincount(ai, r_a_w, n)
+        g_defense = -np.bincount(ai, r_h_w, n) - np.bincount(hi, r_a_w, n)
+        g_attack = g_attack - g_attack.mean()
+        g_defense = g_defense - g_defense.mean()
+
+        grad = np.concatenate([[g_mu, g_gamma, g_rho], g_attack, g_defense])
+        return -grad
 
     @staticmethod
     def _tau(hs, as_, lam_h, lam_a, rho) -> np.ndarray:

@@ -1,4 +1,6 @@
-"""CSV adapter for the match repository port."""
+"""Adaptador CSV del puerto de repositorio de partidos.
+@author Chigga21
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,11 +11,7 @@ from fifa26.domain.interfaces import MatchRepository
 
 
 class CsvMatchRepository(MatchRepository):
-    """Loads matches from the `international_results/results.csv` dataset.
-
-    Concrete adapter for `MatchRepository`. The rest of the system depends on
-    the abstraction, so swapping this for a database or an HTTP API would not
-    require touching any other layer (Dependency Inversion).
+    """Carga los partidos desde el dataset international_results/results.csv.
     """
 
     REQUIRED_COLUMNS = (

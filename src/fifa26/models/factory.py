@@ -1,4 +1,7 @@
-"""Factory for goal models (centralises Strategy construction)."""
+"""Clase que crea modelos de goles para centralizar
+la construccion de estrategias
+@author Chigga21
+"""
 from __future__ import annotations
 
 from fifa26.domain.interfaces import GoalModel
@@ -7,11 +10,7 @@ from fifa26.models.xgboost_model import XGBoostGoalModel
 
 
 class ModelFactory:
-    """Creates `GoalModel` strategies by name.
-
-    Keeping construction in one place means callers (e.g. the pipeline) never
-    import or instantiate concrete model classes directly: they ask the factory
-    for a name and depend only on the `GoalModel` abstraction.
+    """Crea estrategias GoalModel por nombre
     """
 
     _REGISTRY = {

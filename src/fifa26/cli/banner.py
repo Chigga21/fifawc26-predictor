@@ -1,8 +1,7 @@
-"""ASCII header for the program: the WC26 PREDICTOR logo and its author.
+"""Encabezado ASCII del programa con el logo WC26 PREDICTOR
+y su autor. Se carga desde TITLE.txt!
 
-The logo is the Big Money-nw rendering of "WC26 PREDICTOR" stored in `TITLE.txt` at the
-project root. It is loaded at runtime so the artwork stays editable in one place; a
-compact embedded fallback is used if the file is missing.
+@author Chigga21
 """
 from __future__ import annotations
 
@@ -13,7 +12,7 @@ from fifa26.cli import ansi
 AUTHOR = "Chigga21"
 SUBTITLE = "World Cup 2026 Match Predictor with Machine Learning"
 
-# Project root is three levels up from this file: cli/ -> fifa26/ -> src/ -> root.
+# La raiz del proyecto esta tres niveles arriba de este archivo.
 _TITLE_PATH = Path(__file__).resolve().parents[3] / "TITLE.txt"
 
 _FALLBACK = r"""
@@ -29,16 +28,18 @@ def _load_logo() -> str:
         text = _TITLE_PATH.read_text(encoding="utf-8")
     except OSError:
         return _FALLBACK
-    # Drop trailing blank lines from the source art.
     lines = text.rstrip("\n").split("\n")
     return "\n".join(lines) if any(line.strip() for line in lines) else _FALLBACK
 
 
 def render_header() -> None:
-    """Print the coloured logo, subtitle and author block."""
+    """Imprime el logo en color, el autor centrado y el subtitulo"""
     logo = _load_logo()
+    width = max((len(line) for line in logo.splitlines()), default=0)
+    author = f"By {AUTHOR}".center(width)
     print(ansi.title(logo))
     print()
+    print(ansi.title(author))
+    print()
     print(ansi.heading(SUBTITLE))
-    print(ansi.title("   " + f"By {AUTHOR}"))
     print()

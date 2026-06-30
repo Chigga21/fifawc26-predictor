@@ -1,10 +1,5 @@
-"""Matplotlib/seaborn visualisations of the predictions.
-
-The `Visualizer` renders each figure to a PNG. `render_match_figures` is the single place
-that produces the three per-match figures, so both the interactive app and the batch
-pipeline draw the same set; `open_figures` then opens the saved files with the OS image
-viewer (best-effort). Generation is *conditional*: callers only invoke these when the user
-turned graphs on.
+"""Visualizaciones de las predicciones con matplotlib y seaborn.
+@author Chigga21
 """
 from __future__ import annotations
 
@@ -16,24 +11,21 @@ from typing import TYPE_CHECKING
 
 import matplotlib
 
-matplotlib.use("Agg")  # headless backend: save figures without a display
+matplotlib.use("Agg")  
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from fifa26.domain.entities import MatchPrediction, ScoreMatrix
 from fifa26.evaluation.metrics import EvaluationResult
 
-if TYPE_CHECKING:  # avoid an import cycle (application imports visualization indirectly)
+if TYPE_CHECKING:  
     from fifa26.application.prediction_service import MatchForecast
 
 sns.set_theme(style="whitegrid")
 
 
 class Visualizer:
-    """Renders the four figures and saves them to the output directory.
-
-    Pure presentation layer: it consumes domain objects and never computes
-    probabilities itself.
+    """Dibuja las graficas y las guarda en el directorio de salida.
     """
 
     def __init__(self, output_dir: str | Path) -> None:
@@ -110,10 +102,7 @@ class Visualizer:
 
 
 def render_match_figures(visualizer: Visualizer, forecast: "MatchForecast") -> list[Path]:
-    """Render the three per-match figures for a forecast and return their paths.
-
-    Single source of truth for the per-match visuals, shared by the interactive app and
-    the batch pipeline so both produce the same set.
+    """Dibuja las figuras por partido de un pronostico y devuelve sus rutas
     """
     return [
         visualizer.score_matrix_heatmap(forecast.score_matrix),
@@ -123,7 +112,7 @@ def render_match_figures(visualizer: Visualizer, forecast: "MatchForecast") -> l
 
 
 def open_figures(paths: list[Path]) -> None:
-    """Best-effort: open saved PNGs with the OS image viewer; never raise on failure."""
+    """Abre los PNG guardados con el visor del sistema sin fallar si no puede."""
     if not sys.stdout.isatty():
         return
     opener = _viewer_command()
@@ -141,7 +130,6 @@ def open_figures(paths: list[Path]) -> None:
 
 
 def _viewer_command() -> list[str] | None:
-    """Return the platform command that opens a file with its default app, if available."""
     if sys.platform == "darwin" and shutil.which("open"):
         return ["open"]
     if sys.platform.startswith("win"):
