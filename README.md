@@ -39,7 +39,7 @@ Si tu terminal no soporta colores ANSI puedes usar el comando:
 NO_COLOR=1 python main.py
 ```
 
-> [!ADVERTENCIA]
+> [!IMPORTANT]
 > **Este proyecto fue desarrollado con fines educativos y de investigación.** Aunque el modelo puede ofrecer predicciones interesantes, **no se recomienda utilizarlo para realizar apuestas deportivas**, ya que ningún modelo puede predecir un partido con certeza y el fútbol contiene una gran cantidad de factores impredecibles.
 >
 
