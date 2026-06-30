@@ -58,6 +58,5 @@ The project has an automated *testsuite* that you can run with:
 
 ```bash
 pytest -v
-<<<<<<< HEAD
 ```
 
