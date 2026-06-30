@@ -14,7 +14,8 @@ from fifa26.cli import ansi
 from fifa26.cli.banner import render_header
 from fifa26.cli.prompt import read_line
 from fifa26.cli.selector import TeamSelector
-from fifa26.cli.spinner import run_with_spinner
+from fifa26.cli.indicator import ProgressIndicator
+from fifa26.cli.spinner import run_with_dots, run_with_spinner
 from fifa26.domain.entities import Outcome
 from fifa26.prediction.outcome import OutcomeCalculator
 from fifa26.visualization.plots import Visualizer, open_figures, render_match_figures
@@ -117,18 +118,22 @@ class InteractiveApp:
             "  "
             + ansi.hint(f"Training: {len(train)} matches | test: {len(test)} matches")
         )
-        run_with_spinner("Estimating offensive and defensive strengths with Dixon–Coles", self._trainer.fit_features)
+        run_with_dots(
+            "Estimating offensive and defensive strengths with Dixon–Coles",
+            self._trainer.fit_features,
+        )
 
         for model in self._trainer.models:
+            label = f"Training model {model.name}"
             if getattr(model, "verbose_training", False):
-                # Imprime sus propios mensajes; sin spinner para no corromper la pantalla.
-                print("  " + ansi.focused("[*]") + f" Training model {model.name}")
-                model.on_progress = lambda msg: print("    " + ansi.hint(msg))
-                result = self._trainer.train_model(model)
+                # Puntos animados en hilo aparte: el MCMC ocupa el hilo principal
+                # pero el indicador sigue vivo y refleja cada fase del muestreo.
+                result = self._run_verbose(
+                    model, label, lambda m=model: self._trainer.train_model(m)
+                )
             else:
                 result = run_with_spinner(
-                    f"Training model {model.name}",
-                    lambda m=model: self._trainer.train_model(m),
+                    label, lambda m=model: self._trainer.train_model(m)
                 )
             print("    " + ansi.hint(str(result)))
 
@@ -136,13 +141,20 @@ class InteractiveApp:
         # poder mostrar ambos pronosticos a la vez.
         print()
         print("  " + ansi.focused("[*]") + " Refitting all models on the full dataset")
-
-        def announce(model) -> None:
-            print("    " + ansi.hint(f"- {model.name}"))
+        run_with_dots(
+            "Refitting offensive and defensive strengths with Dixon–Coles",
+            self._trainer.fit_production_features,
+        )
+        for model in self._trainer.models:
+            label = f"Refitting model {model.name}"
             if getattr(model, "verbose_training", False):
-                model.on_progress = lambda msg: print("      " + ansi.hint(msg))
-
-        self._trainer.fit_production(announce)
+                self._run_verbose(
+                    model, label, lambda m=model: self._trainer.fit_production_model(m)
+                )
+            else:
+                run_with_spinner(
+                    label, lambda m=model: self._trainer.fit_production_model(m)
+                )
 
         artifacts = self._trainer.artifacts()
         print()
@@ -154,6 +166,26 @@ class InteractiveApp:
             )
         )
         return artifacts
+
+    def _run_verbose(self, model, label, fn):
+        """Ajusta un modelo verboso mostrando puntos animados que se refrescan
+        con cada mensaje de progreso del propio modelo.
+
+        El indicador anima en su hilo y model.on_progress solo cambia la
+        etiqueta, asi el mensaje de fase queda vivo aunque el muestreo acapare
+        el hilo principal. Al terminar se fija la ultima linea de diagnostico.
+        """
+        indicator = ProgressIndicator(label, style="dots", dim=True, indent="    ").start()
+        model.on_progress = indicator.update
+        try:
+            result = fn()
+        except BaseException:
+            model.on_progress = None
+            indicator.stop(done_message="")
+            raise
+        model.on_progress = None
+        indicator.stop(done_message=indicator.label)
+        return result
 
     def _predict_loop(self) -> None:
         assert self._service is not None
@@ -251,11 +283,15 @@ class InteractiveApp:
         ]
         print(ansi.confirm(row("Most likely result", results)))
 
-        scorelines = [
-            f"{f.top_scorelines[0][0]} {f.top_scorelines[0][1]:4.0%}"
-            for _, f in forecasts
-        ]
-        print(row("Top scoreline", scorelines))
+        print()
+        depth = min(10, *(len(f.top_scorelines) for _, f in forecasts))
+        print("  " + ansi.bold(f"Top {depth} scorelines"))
+        for rank in range(depth):
+            cells = [
+                f"{f.top_scorelines[rank][0]} {f.top_scorelines[rank][1]:4.0%}"
+                for _, f in forecasts
+            ]
+            print(row(f"{rank + 1:>2}.", cells))
 
     # ------------------------------------------------------------- visualizacion
     def _maybe_visualise(self, forecast: MatchForecast) -> None:
@@ -263,8 +299,10 @@ class InteractiveApp:
         if not self._generate_graphs:
             return
         print()
-        print("  " + ansi.hint("Generating graphs..."))
-        paths = render_match_figures(self._visualizer, forecast)
+        paths = run_with_dots(
+            "Generating graphs",
+            lambda: render_match_figures(self._visualizer, forecast),
+        )
         open_figures(paths)
         for path in paths:
             print("    " + ansi.hint(f"- {path}"))

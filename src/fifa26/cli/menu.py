@@ -43,8 +43,8 @@ def arrow_select(
     """Elige una opcion con las flechas y la devuelve, o None si se cancela.
 
     Las flechas mueven el resaltado y la ventana se desplaza, los caracteres imprimibles
-    filtran, Backspace borra el ultimo caracter del filtro, Enter confirma y Esc, Ctrl-C o
-    la tecla q con el filtro vacio cancelan.
+    filtran, incluida la q para buscar nombres como Qatar, Backspace borra el ultimo
+    caracter del filtro, Enter confirma y Esc, Ctrl-C o el fin de entrada cancelan.
     """
     pool = [o for o in options if o != exclude]
     print()
@@ -116,8 +116,6 @@ def _read_key() -> str:
             if code == b"B":
                 return _DOWN
         return ""  # secuencia lateral o no manejada se ignora
-    if ch == b"q":
-        return _CANCEL
     try:
         return ch.decode()
     except UnicodeDecodeError:  

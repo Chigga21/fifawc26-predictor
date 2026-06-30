@@ -9,8 +9,8 @@ from pathlib import Path
 
 from fifa26.cli import ansi
 
-AUTHOR = "Chigga21"
-SUBTITLE = "World Cup 2026 Match Predictor with Machine Learning"
+AUTHOR = "Said Apis (Chigga21)"
+SUBTITLE = "World Cup 2026 Match Predictor"
 
 # La raiz del proyecto esta tres niveles arriba de este archivo.
 _TITLE_PATH = Path(__file__).resolve().parents[3] / "TITLE.txt"

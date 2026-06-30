@@ -1,10 +1,4 @@
 """Validacion cruzada de origen movil para comparar modelos por temporada.
-
-En lugar de un unico año de prueba, entrena con todo lo anterior a cada año de
-origen y evalua en ese año, promediando las metricas entre pliegues. Asi la
-seleccion de modelo descansa en varias temporadas y no en una sola ruidosa.
-
-Autor Chigga21
 """
 from __future__ import annotations
 
@@ -54,10 +48,6 @@ def rolling_origin_evaluate(
     max_goals: int = 10,
 ) -> dict[str, EvaluationResult]:
     """Promedia las metricas 1X2 de cada modelo sobre varios años de origen.
-
-    Para cada año Y entrena Dixon-Coles y los modelos con year menor que Y y
-    evalua en year igual a Y. Reutiliza las mismas instancias reajustandolas en
-    cada pliegue, sin fuga de datos porque cada ajuste solo ve su entrenamiento.
     """
     per_model: dict[str, list[EvaluationResult]] = {m.name: [] for m in models}
     for year in sorted(test_years):

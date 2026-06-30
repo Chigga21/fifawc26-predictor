@@ -1,57 +1,60 @@
-# WC26 PREDICTOR
+# World Cup 2026 Predictor
 
 <p align="center">
-  <img src="static/fifa.jpg" alt="FIFA" width="300"/>
+  <img src="static/fifa.jpg" alt="FIFA" width="350"/>
 </p>
 
-**WC26 Predictor** es un proyecto personal de Machine Learning orientado a la predicción de partidos internacionales, con especial enfoque en la *Copa Mundial* de la FIFA 2026. A partir del dataset [**international_results**](https://github.com/martj42/international_results), el sistema estima la fuerza ofensiva y defensiva de cada selección mediante un modelo Dixon-Coles. Con estas estimaciones, se entrenan dos enfoques de predicción de goles esperados:
+**WC26 Predictor** is a personal Machine Learning project focused on predicting international matches, with a special emphasis on the *FIFA World Cup 2026*. 
 
-- Un modelo MCMC Bayesiano
-- Un modelo de regresión con XGBoost
+Using the [**international_results**](https://github.com/martj42/international_results) dataset, the system estimates each national team's offensive and defensive strength through a Dixon-Coles model. With these estimates, two expected-goals prediction approaches are trained:
 
-Las predicciones de goles se transforman en una matriz de probabilidades basada en distribuciones de `Poisson`, lo que permite calcular las probabilidades finales del resultado 1X2.
+- A Bayesian MCMC model
+- An XGBoost regression model
 
-## Ejecución
+The goal predictions are transformed into a probability matrix based on `Poisson` distributions, which allows each model to calculate the final 1X2 outcome probabilities.
 
-Crea y activa un entorno virtual:
+## Running the project
+
+Create and activate a virtual environment:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 ```
 
-Instala las dependencias y ejecuta la interfaz interactiva:
+Install the dependencies and run the interactive interface:
 
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-## Visualización de resultados 
+## Visualizing results
 
-Opcionalmente, puedes generar visualizaciones de los resultados con `matplotlib` / `pyplot` desde la interfaz interactiva.
-Los gráficos generados se almacenan en el directorio `outputs/`.
+Optionally, you can generate visualizations of the results with `pyplot` from the interactive interface.
 
-## Modo sin colores
+The generated plots are stored in the `outputs/` directory.
 
-Si tu terminal no soporta colores ANSI puedes usar el comando:
+## No-color mode
+
+If your terminal doesn't support ANSI colors, you can use the following command:
 
 ```bash
 NO_COLOR=1 python main.py
 ```
 
 > [!IMPORTANT]
-> **Este proyecto fue desarrollado con fines educativos y de investigación.** Aunque el modelo puede ofrecer predicciones interesantes, **no se recomienda utilizarlo para realizar apuestas deportivas**, ya que ningún modelo puede predecir un partido con certeza y el fútbol contiene una gran cantidad de factores impredecibles.
->
+> **This project was developed for educational and research purposes.** Although the model may produce interesting predictions, it is not recommended for use in betting, since no model can predict football's inherent uncertainty.
+> 
 
 <p align="center">
-  <img src="static/apuesta.jpg" alt="Apuesta" width="500"/>
+  <img src="static/apuesta.jpg" alt="Bet" width="500"/>
 </p>
 
-Dicho eso, personalmente el programa ha producido resultados acertados en algunas ocasiones. Esto debe considerarse anecdótico y no una base estadística confiable.
+That said, the program has personally produced accurate results on a few occasions. This should be considered anecdotal and not a reliable statistical basis.
 
 ## Testing
 
-El proyecto cuenta con una *testsuite* automatizada que puedes ejecutar con:
+The project has an automated *testsuite* that you can run with:
 
 ```bash
 pytest -v

@@ -111,23 +111,33 @@ class Trainer:
         by_name = {m.name: m for m in self._models}
         return by_name[self.best_evaluation().model_name]
 
-    def fit_production(self, on_model: Callable[[GoalModel], None] | None = None) -> None:
-        """Reentrena Dixon-Coles y TODOS los modelos con todos los datos.
-
-        Cada modelo se reentrena para que la prediccion final muestre ambos a la
-        vez. El callback opcional on_model permite a la UI anunciar cada modelo
-        antes de ajustarlo.
-        """
+    def fit_production_features(self) -> dict[str, TeamStrength]:
+        """Reentrena Dixon-Coles con todos los datos para la produccion."""
         self._dixon_coles.fit(self.full)
         self._prod_strengths = self._dixon_coles.strengths
         self._prod_teams = sorted(self._prod_strengths)
         self._prod_matrix_builder = PoissonMatrixBuilder(
             self._max_goals, rho=self._dixon_coles.rho
         )
+        return self._prod_strengths
+
+    def fit_production_model(self, model: GoalModel) -> None:
+        """Reentrena un unico modelo con todos los datos de produccion."""
+        model.fit(self.full, self._prod_strengths)
+
+    def fit_production(self, on_model: Callable[[GoalModel], None] | None = None) -> None:
+        """Reentrena Dixon-Coles y TODOS los modelos con todos los datos.
+
+        Cada modelo se reentrena para que la prediccion final muestre ambos a la
+        vez. El callback opcional on_model permite a la UI anunciar cada modelo
+        antes de ajustarlo. Se conserva como envoltura de las dos etapas finas
+        fit_production_features y fit_production_model.
+        """
+        self.fit_production_features()
         for model in self._models:
             if on_model is not None:
                 on_model(model)
-            model.fit(self.full, self._prod_strengths)
+            self.fit_production_model(model)
 
     def artifacts(self) -> TrainedArtifacts:
         best_result = self.best_evaluation()

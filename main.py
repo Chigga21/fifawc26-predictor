@@ -52,7 +52,7 @@ def build_trainer() -> tuple[Trainer, OutcomeCalculator]:
         dixon_coles=dixon_coles,
         models=models,
         outcome_calculator=outcome,
-        test_year=2024,
+        test_year=2025,
         max_goals=10,
     )
     return trainer, outcome
