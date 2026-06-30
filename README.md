@@ -1,7 +1,6 @@
 # World Cup 2026 Predictor
 
 <p align="center">
-<<<<<<< HEAD
   <img src="static/fifa.jpg" alt="FIFA" width="350"/>
 </p>
 
