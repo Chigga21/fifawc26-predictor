@@ -7,7 +7,21 @@ import pandas as pd
 from scipy.optimize import check_grad
 from scipy.special import gammaln
 
-from fifa26.features.dixon_coles import DixonColesEstimator
+from fifa26.features.dixon_coles import DixonColesEstimator, _match_importance
+
+
+def test_match_importance_asigna_los_niveles_esperados():
+    tournaments = pd.Series([
+        "Friendly",
+        "FIFA World Cup qualification",
+        "UEFA Nations League",
+        "CONCACAF Nations League qualification",
+        "UEFA Euro",
+        "FIFA World Cup",
+        "Some Regional Cup",
+    ])
+    weights = _match_importance(tournaments)
+    assert list(weights) == [1.0, 2.0, 2.5, 2.0, 3.0, 4.0, 1.5]
 
 
 def _synthetic_args(n=10, m=300, seed=0):

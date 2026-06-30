@@ -32,11 +32,14 @@ class InteractiveApp:
         self._visualizer = visualizer
         self._service: PredictionService | None = None
         self._generate_graphs = False
+        self._run_cv = False
 
     def run(self) -> int:
         try:
             if not self._main_menu():
                 return 0
+            if self._run_cv:
+                self._cross_validate()
             self._prepare_service()
             if self._service is not None:
                 self._predict_loop()
@@ -67,6 +70,17 @@ class InteractiveApp:
         print("  " + ansi.hint(f"graphs: {'ON' if self._generate_graphs else 'OFF'}"))
         print()
 
+        print(
+            "Rolling cross-validation:   "
+            + " [ Y ] yes"
+            + "    [ N ] no   "
+            + ansi.hint("( Enter = no )")
+        )
+        print(ansi.hint("compares models over several seasons before training, slower"))
+        self._run_cv = self._ask({"y": "yes", "n": "no", "enter": "no"}) == "yes"
+        print("  " + ansi.hint(f"cross-validation: {'ON' if self._run_cv else 'OFF'}"))
+        print()
+
         print("  The following ML models will be trained:")
         for name in self._trainer.model_names:
             print("    " + ansi.active("[x] ") + name)
@@ -78,6 +92,21 @@ class InteractiveApp:
         """Entrena los modelos y construye el servicio de prediccion con el resultado"""
         artifacts = self._train()
         self._service = PredictionService.from_artifacts(artifacts, self._outcome)
+
+    def _cross_validate(self) -> None:
+        """Ejecuta la validacion cruzada de origen movil y muestra una tabla."""
+        years = [self._trainer.test_year - 2, self._trainer.test_year - 1, self._trainer.test_year]
+        print()
+        results = run_with_spinner(
+            f"Cross-validating over seasons {years}",
+            lambda: self._trainer.cross_validate(years),
+        )
+        print()
+        print(ansi.heading("[ * ] Rolling-origin cross-validation"))
+        print()
+        for result in sorted(results.values(), key=lambda r: r.rps):
+            print("  " + ansi.hint(str(result)))
+        print()
 
     def _train(self) -> TrainedArtifacts:
         print()
@@ -103,22 +132,24 @@ class InteractiveApp:
                 )
             print("    " + ansi.hint(str(result)))
 
-        # Reentrena el modelo ganador con todos los datos
-        best = self._trainer.best_model()
-        label = f"Refitting best model ({best.name}) on the full dataset"
-        if getattr(best, "verbose_training", False):
-            print("  " + ansi.focused("[*]") + " " + label)
-            best.on_progress = lambda msg: print("    " + ansi.hint(msg))
-            self._trainer.fit_production(best)
-        else:
-            run_with_spinner(label, lambda: self._trainer.fit_production(best))
+        # Reentrena Dixon-Coles y TODOS los modelos con todos los datos para
+        # poder mostrar ambos pronosticos a la vez.
+        print()
+        print("  " + ansi.focused("[*]") + " Refitting all models on the full dataset")
+
+        def announce(model) -> None:
+            print("    " + ansi.hint(f"- {model.name}"))
+            if getattr(model, "verbose_training", False):
+                model.on_progress = lambda msg: print("      " + ansi.hint(msg))
+
+        self._trainer.fit_production(announce)
 
         artifacts = self._trainer.artifacts()
         print()
         print(
             "  "
             + ansi.confirm(
-                f"[done] Best Model: {artifacts.best_model.name} "
+                f"[done] Best on {self._trainer.test_year}: {artifacts.best_model.name} "
                 f"(RPS {artifacts.best_rps:.4f} | accuracy {artifacts.best_accuracy:.3f})"
             )
         )
@@ -141,9 +172,9 @@ class InteractiveApp:
             if decision != "ok": 
                 continue
 
-            forecast = self._service.predict(home, away, neutral=neutral)
-            self._show_result(forecast)
-            self._maybe_visualise(forecast)
+            forecasts = self._service.predict_all(home, away, neutral=neutral)
+            self._show_results(home, away, forecasts)
+            self._maybe_visualise(forecasts[0][1])
 
             print()
             print("  " + ansi.hint("[ N ] new match    [ Q ] quit"))
@@ -184,36 +215,47 @@ class InteractiveApp:
         print("  " + ansi.hint("[ Enter ] confirm   [ E ] edit    [ Q ] quit"))
         return self._ask({"enter": "ok", "e": "edit", "q": "quit"})
 
-    def _show_result(self, forecast: MatchForecast) -> None:
-        sm = forecast.score_matrix
-        pred = forecast.prediction
+    def _show_results(
+        self, home: str, away: str, forecasts: list[tuple[str, MatchForecast]]
+    ) -> None:
+        """Muestra el pronostico de cada modelo en columnas comparables."""
         print()
-        print(ansi.heading(f"[ 6 ] Prediction  {pred.home_team}  vs  {pred.away_team}"))
+        print(ansi.heading(f"[ 6 ] Prediction  {home}  vs  {away}"))
         print()
-        print(
-            "  Expected goals:  "
-            + ansi.bold(f"{pred.home_team} {sm.lambda_home:.2f}")
-            + "   -   "
-            + ansi.bold(f"{sm.lambda_away:.2f} {pred.away_team}")
-        )
-        print()
-        print("  1X2 probabilities:")
-        self._print_prob(f"[1] {pred.home_team} wins", pred.prob_home_win)
-        self._print_prob("[X] Draw", pred.prob_draw)
-        self._print_prob(f"[2] {pred.away_team} wins", pred.prob_away_win)
 
-        print()
-        label = self._outcome_label(pred.predicted_outcome, pred.home_team, pred.away_team)
-        print("  Most likely result:  " + ansi.confirm(label))
+        names = [name for name, _ in forecasts]
+        label_w = 22
+        col_w = 16
 
-        print()
-        print("  " + ansi.hint("Most likely scorelines:"))
-        for scoreline, prob in forecast.top_scorelines[:5]:
-            print(f"    [ {scoreline} ]  {prob:5.1%}")
+        def row(label: str, cells: list[str]) -> str:
+            body = "".join(f"{c:<{col_w}}" for c in cells)
+            return f"  {label:<{label_w}}{body}"
 
-    def _print_prob(self, label: str, prob: float) -> None:
-        bar = _bar(prob)
-        print(f"    {label:<22} {ansi.dim(bar)}  {prob:5.1%}")
+        # Cabecera con el nombre de cada modelo. El color envuelve toda la linea
+        # para no romper el ancho fijo de las columnas.
+        print(ansi.bold(row("", names)))
+        print()
+
+        expected = [
+            f"{f.score_matrix.lambda_home:.2f} - {f.score_matrix.lambda_away:.2f}"
+            for _, f in forecasts
+        ]
+        print(row("Expected goals", expected))
+        print(row(f"[1] {home} wins", [f"{f.prediction.prob_home_win:5.1%}" for _, f in forecasts]))
+        print(row("[X] Draw", [f"{f.prediction.prob_draw:5.1%}" for _, f in forecasts]))
+        print(row(f"[2] {away} wins", [f"{f.prediction.prob_away_win:5.1%}" for _, f in forecasts]))
+
+        results = [
+            self._outcome_label(f.prediction.predicted_outcome, home, away)
+            for _, f in forecasts
+        ]
+        print(ansi.confirm(row("Most likely result", results)))
+
+        scorelines = [
+            f"{f.top_scorelines[0][0]} {f.top_scorelines[0][1]:4.0%}"
+            for _, f in forecasts
+        ]
+        print(row("Top scoreline", scorelines))
 
     # ------------------------------------------------------------- visualizacion
     def _maybe_visualise(self, forecast: MatchForecast) -> None:
@@ -253,9 +295,3 @@ class InteractiveApp:
             if char in actions:
                 return actions[char]
             print("  " + ansi.hint("Not an option. Try again."))
-
-
-def _bar(prob: float, width: int = 20) -> str:
-    fill = int(round(prob * width))
-    fill = max(0, min(width, fill))
-    return "[" + "#" * fill + "-" * (width - fill) + "]"

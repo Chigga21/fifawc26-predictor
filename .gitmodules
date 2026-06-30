@@ -1,0 +1,3 @@
+[submodule "international_results"]
+	path = international_results
+	url = git@github.com:martj42/international_results.git

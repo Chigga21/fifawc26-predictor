@@ -15,8 +15,38 @@ from scipy.special import gammaln
 from fifa26.domain.entities import TeamStrength
 
 
+def _match_importance(tournaments: pd.Series) -> np.ndarray:
+    """Peso de importancia por tipo de torneo al estilo del ranking FIFA.
+
+    Los amistosos pesan menos y la fase final del Mundial pesa mas, de modo que
+    los partidos competitivos influyen mas en las fuerzas estimadas. Las reglas
+    son por coincidencia de texto y los valores son ajustables.
+    """
+    names = tournaments.astype(str)
+    weight = np.full(len(names), 1.5, dtype=float)
+    lowered = names.str.lower()
+
+    is_qualification = lowered.str.contains("qualification")
+    is_nations_league = lowered.str.contains("nations league")
+    is_continental_final = names.str.contains(
+        "UEFA Euro|Copa América|African Cup of Nations|AFC Asian Cup|Gold Cup",
+        regex=True,
+    ) & ~is_qualification
+    is_world_cup = names.eq("FIFA World Cup")
+    is_friendly = names.eq("Friendly")
+
+    weight[is_nations_league.to_numpy()] = 2.5
+    weight[is_continental_final.to_numpy()] = 3.0
+    # La fase de clasificacion se evalua despues para que una clasificacion de
+    # la Nations League cuente como clasificatorio y no como fase final.
+    weight[is_qualification.to_numpy()] = 2.0
+    weight[is_world_cup.to_numpy()] = 4.0
+    weight[is_friendly.to_numpy()] = 1.0
+    return weight
+
+
 class DixonColesEstimator:
-    def __init__(self, half_life_days: int = 540, max_iter: int = 500) -> None:
+    def __init__(self, half_life_days: int = 540, max_iter: int = 2000) -> None:
         self._half_life_days = half_life_days
         self._max_iter = max_iter
         self.mu: float = 0.0
@@ -35,7 +65,8 @@ class DixonColesEstimator:
         hs = matches["home_score"].to_numpy()
         as_ = matches["away_score"].to_numpy()
         home_adv = (~matches["neutral"].to_numpy()).astype(float)
-        weights = self._time_weights(matches["date"])
+        # El peso final combina el decaimiento temporal con la importancia del torneo.
+        weights = self._time_weights(matches["date"]) * _match_importance(matches["tournament"])
 
         log_fact = gammaln(hs + 1) + gammaln(as_ + 1)
 
@@ -49,7 +80,7 @@ class DixonColesEstimator:
             method="L-BFGS-B",
             jac=self._neg_log_likelihood_grad,
             bounds=bounds,
-            options={"maxiter": self._max_iter},
+            options={"maxiter": self._max_iter, "maxfun": self._max_iter * 20},
         )
 
         if not result.success:

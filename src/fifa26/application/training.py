@@ -6,12 +6,14 @@ entrena los modelos de machine learning y elige al mejor.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 import pandas as pd
 
 from fifa26.data.cleaning import MatchCleaner
 from fifa26.domain.entities import MatchPrediction, Outcome, TeamStrength
 from fifa26.domain.interfaces import GoalModel, MatchRepository
+from fifa26.evaluation.cross_validation import predict_fixtures, rolling_origin_evaluate
 from fifa26.evaluation.metrics import EvaluationResult, evaluate_1x2
 from fifa26.features.dixon_coles import DixonColesEstimator
 from fifa26.prediction.outcome import OutcomeCalculator
@@ -109,9 +111,12 @@ class Trainer:
         by_name = {m.name: m for m in self._models}
         return by_name[self.best_evaluation().model_name]
 
-    def fit_production(self, model: GoalModel) -> None:
-        """Reentrena con el modelo Dixon-Coles y también 
-        al mejor modelo con TODOS los datos para mejorar las predicciones.
+    def fit_production(self, on_model: Callable[[GoalModel], None] | None = None) -> None:
+        """Reentrena Dixon-Coles y TODOS los modelos con todos los datos.
+
+        Cada modelo se reentrena para que la prediccion final muestre ambos a la
+        vez. El callback opcional on_model permite a la UI anunciar cada modelo
+        antes de ajustarlo.
         """
         self._dixon_coles.fit(self.full)
         self._prod_strengths = self._dixon_coles.strengths
@@ -119,7 +124,10 @@ class Trainer:
         self._prod_matrix_builder = PoissonMatrixBuilder(
             self._max_goals, rho=self._dixon_coles.rho
         )
-        model.fit(self.full, self._prod_strengths)
+        for model in self._models:
+            if on_model is not None:
+                on_model(model)
+            model.fit(self.full, self._prod_strengths)
 
     def artifacts(self) -> TrainedArtifacts:
         best_result = self.best_evaluation()
@@ -153,15 +161,21 @@ class Trainer:
     def model_names(self) -> list[str]:
         return [m.name for m in self._models]
 
+    def cross_validate(self, years: list[int]) -> dict[str, EvaluationResult]:
+        """Validacion cruzada de origen movil sobre los años indicados.
+
+        Reajusta Dixon-Coles y los modelos por pliegue, por lo que conviene
+        ejecutarla antes del entrenamiento de produccion.
+        """
+        matches = self._cleaner.clean(self._repository.load())
+        return rolling_origin_evaluate(
+            matches, self._dixon_coles, self._models, self._outcome, years, self._max_goals
+        )
+
     def _predict_fixtures(
         self,
         model: GoalModel,
         fixtures: pd.DataFrame,
         matrix_builder: PoissonMatrixBuilder,
     ) -> list[MatchPrediction]:
-        lambda_home, lambda_away = model.predict_expected_goals(fixtures)
-        predictions = []
-        for (_, row), lh, la in zip(fixtures.iterrows(), lambda_home, lambda_away):
-            sm = matrix_builder.build(row["home_team"], row["away_team"], lh, la)
-            predictions.append(self._outcome.to_prediction(sm))
-        return predictions
+        return predict_fixtures(model, fixtures, matrix_builder, self._outcome)

@@ -31,12 +31,12 @@ class MatchForecast:
 class PredictionService:
     def __init__(
         self,
-        model: GoalModel,
+        models: list[GoalModel],
         matrix_builder: PoissonMatrixBuilder,
         outcome_calculator: OutcomeCalculator,
         teams: list[str],
     ) -> None:
-        self._model = model
+        self._models = list(models)
         self._matrix_builder = matrix_builder
         self._outcome = outcome_calculator
         self._teams = list(teams)
@@ -46,7 +46,7 @@ class PredictionService:
         cls, artifacts: TrainedArtifacts, outcome_calculator: OutcomeCalculator
     ) -> "PredictionService":
         return cls(
-            model=artifacts.best_model,
+            models=artifacts.models,
             matrix_builder=artifacts.matrix_builder,
             outcome_calculator=outcome_calculator,
             teams=artifacts.teams,
@@ -57,8 +57,8 @@ class PredictionService:
         return self._teams
 
     @property
-    def model_name(self) -> str:
-        return self._model.name
+    def model_names(self) -> list[str]:
+        return [m.name for m in self._models]
 
     def predict(
         self,
@@ -67,6 +67,32 @@ class PredictionService:
         neutral: bool = True,
         tournament: str = "FIFA World Cup",
         top_n: int = 10,
+    ) -> MatchForecast:
+        """Pronostico del primer modelo, conservado por compatibilidad."""
+        return self._forecast(self._models[0], home_team, away_team, neutral, tournament, top_n)
+
+    def predict_all(
+        self,
+        home_team: str,
+        away_team: str,
+        neutral: bool = True,
+        tournament: str = "FIFA World Cup",
+        top_n: int = 10,
+    ) -> list[tuple[str, MatchForecast]]:
+        """Pronostico de cada modelo para mostrarlos todos a la vez."""
+        return [
+            (model.name, self._forecast(model, home_team, away_team, neutral, tournament, top_n))
+            for model in self._models
+        ]
+
+    def _forecast(
+        self,
+        model: GoalModel,
+        home_team: str,
+        away_team: str,
+        neutral: bool,
+        tournament: str,
+        top_n: int,
     ) -> MatchForecast:
         fixture = pd.DataFrame(
             [
@@ -78,7 +104,7 @@ class PredictionService:
                 }
             ]
         )
-        lambda_home, lambda_away = self._model.predict_expected_goals(fixture)
+        lambda_home, lambda_away = model.predict_expected_goals(fixture)
         score_matrix = self._matrix_builder.build(
             home_team, away_team, float(lambda_home[0]), float(lambda_away[0])
         )
