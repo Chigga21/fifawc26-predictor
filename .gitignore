@@ -1,0 +1,9 @@
+.venv/
+.pytest_cache/
+artifacts/
+docs/
+CLAUDE.md
+outputs/
+.claude/
+__pycache__/
+*.png
